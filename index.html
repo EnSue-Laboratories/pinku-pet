@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pinku 🎀 桌面宠物</title>
+<style>
+  :root {
+    --blossom: #FFB6D1;
+    --deep-pink: #FF8FB1;
+    --shell: #FFE1EA;
+    --matcha: #A8D68A;
+    --pine: #3C6B34;
+    --ink: #5a3a47;
+    --bar: rgba(255, 255, 255, 0.72);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", system-ui, sans-serif;
+    color: var(--ink);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* ---- fake desktop ---- */
+  #desktop {
+    position: fixed; inset: 0;
+    background:
+      radial-gradient(1200px 700px at 70% 20%, #ffd9e8 0%, transparent 60%),
+      radial-gradient(900px 600px at 20% 80%, #d9f2c8 0%, transparent 55%),
+      linear-gradient(160deg, #fdeef4 0%, #f7e3ec 45%, #e8f3de 100%);
+  }
+  .cloud {
+    position: absolute; border-radius: 50%;
+    background: rgba(255,255,255,.55); filter: blur(2px);
+  }
+
+  /* desktop icons (decoration) */
+  .icon {
+    position: absolute; width: 76px; text-align: center;
+    font-size: 12px; color: #7a5566; opacity: .85;
+  }
+  .icon .glyph {
+    width: 52px; height: 52px; margin: 0 auto 6px;
+    background: var(--bar); border-radius: 14px;
+    display: grid; place-items: center; font-size: 26px;
+    box-shadow: 0 2px 8px rgba(90,58,71,.12);
+  }
+
+  /* ---- taskbar ---- */
+  #taskbar {
+    position: fixed; left: 50%; bottom: 14px; transform: translateX(-50%);
+    display: flex; align-items: center; gap: 10px;
+    background: var(--bar); backdrop-filter: blur(14px);
+    border-radius: 18px; padding: 8px 16px;
+    box-shadow: 0 6px 24px rgba(90,58,71,.18);
+    z-index: 50;
+  }
+  #taskbar .divider { width: 1px; height: 26px; background: rgba(90,58,71,.15); }
+  .chip {
+    border: none; cursor: pointer; font: inherit; font-size: 14px;
+    background: var(--shell); color: var(--ink);
+    border-radius: 12px; padding: 7px 14px;
+    transition: transform .12s ease, background .12s ease;
+  }
+  .chip:hover { background: var(--blossom); transform: translateY(-2px); }
+  .chip:active { transform: translateY(0) scale(.96); }
+  .chip:focus-visible { outline: 2px solid var(--deep-pink); outline-offset: 2px; }
+  #clock { font-size: 14px; font-variant-numeric: tabular-nums; padding: 0 4px; }
+
+  /* ---- state badge ---- */
+  #stateBadge {
+    position: fixed; top: 16px; right: 16px; z-index: 50;
+    background: var(--bar); backdrop-filter: blur(14px);
+    border-radius: 14px; padding: 10px 14px; font-size: 13px;
+    box-shadow: 0 4px 16px rgba(90,58,71,.14);
+    display: flex; align-items: center; gap: 8px;
+  }
+  #stateDot {
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--matcha); box-shadow: 0 0 0 3px rgba(168,214,138,.3);
+  }
+  #stateName { font-weight: 600; color: var(--pine); }
+
+  /* ---- pet ---- */
+  #pet {
+    position: fixed; width: 180px; height: 180px;
+    cursor: grab; z-index: 40; touch-action: none;
+    will-change: transform, left, top;
+    transform-origin: bottom center;
+  }
+  #pet.dragging { cursor: grabbing; }
+  .petLayer {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%; object-fit: contain; pointer-events: none;
+    filter: drop-shadow(0 14px 10px rgba(90,58,71,.22));
+    transform-origin: bottom center;
+    opacity: 0;
+    transition: opacity .28s ease;
+  }
+  .petLayer.show { opacity: 1; }
+  .flip .petLayer { transform: scaleX(-1); }
+
+  /* breathing / bobbing */
+  @keyframes bob {
+    0%,100% { transform: translateY(0) scale(1.00, 1.00); }
+    50%     { transform: translateY(-4px) scale(0.99, 1.01); }
+  }
+  @keyframes bob-flip {
+    0%,100% { transform: scaleX(-1) translateY(0) scale(1.00, 1.00); }
+    50%     { transform: scaleX(-1) translateY(-4px) scale(0.99, 1.01); }
+  }
+  #pet.alive .petLayer { animation: bob 2.4s ease-in-out infinite; }
+  #pet.alive.flip .petLayer { animation: bob-flip 2.4s ease-in-out infinite; }
+  /* squash pop when switching expression — layered on the wrapper so it
+     composes with the per-layer bob/flip animation instead of fighting it */
+  @keyframes pop {
+    0% { transform: scale(1,1); }
+    35% { transform: scale(1.05,.94); }
+    70% { transform: scale(.98,1.03); }
+    100% { transform: scale(1,1); }
+  }
+  #pet.pop { animation: pop .34s ease; }
+  @media (prefers-reduced-motion: reduce) {
+    #pet.alive .petLayer, #pet.alive.flip .petLayer, #pet.pop { animation: none; }
+    .petLayer { transition: none; }
+  }
+
+  /* emotes above head */
+  .emote {
+    position: fixed; z-index: 45; font-size: 26px; pointer-events: none;
+    animation: float-up 1.2s ease-out forwards;
+  }
+  @keyframes float-up {
+    from { opacity: 1; transform: translateY(0) scale(.7); }
+    to   { opacity: 0; transform: translateY(-56px) scale(1.25); }
+  }
+
+  /* cookie flying to pet */
+  .cookie-fly {
+    position: fixed; z-index: 60; font-size: 30px; pointer-events: none;
+    transition: all .55s cubic-bezier(.5,-.2,.6,1.1);
+  }
+
+  #hint {
+    position: fixed; top: 16px; left: 16px; z-index: 50;
+    background: var(--bar); backdrop-filter: blur(14px);
+    border-radius: 14px; padding: 10px 14px; font-size: 13px; line-height: 1.7;
+    box-shadow: 0 4px 16px rgba(90,58,71,.14); max-width: 240px;
+  }
+  #hint b { color: var(--deep-pink); }
+</style>
+</head>
+<body>
+<div id="desktop" aria-hidden="true">
+  <div class="cloud" style="left:8%;  top:12%; width:140px; height:46px;"></div>
+  <div class="cloud" style="left:16%; top:9%;  width:90px;  height:38px;"></div>
+  <div class="cloud" style="right:12%;top:22%; width:120px; height:42px;"></div>
+  <div class="icon" style="left:24px; top:96px;"><div class="glyph">🧶</div>毛线球</div>
+  <div class="icon" style="left:24px; top:196px;"><div class="glyph">🍪</div>饼干罐</div>
+  <div class="icon" style="left:24px; top:296px;"><div class="glyph">📁</div>Pinku 的家</div>
+</div>
+
+<div id="hint">
+  <b>玩法:</b>点它 → 开心 · 拖它 → 害羞<br>
+  连点戳它 → 生气 · 双击 → 跳跳<br>
+  放着不管 → 睡觉 😴
+</div>
+
+<div id="stateBadge" role="status">
+  <span id="stateDot"></span>状态:<span id="stateName">待机</span>
+</div>
+
+<div id="pet" class="alive" aria-label="Pinku 桌面宠物">
+  <img class="petLayer show" src="sprites/pinku_idle.png" alt="Pinku 桌面宠物">
+  <img class="petLayer" src="sprites/pinku_idle.png" alt="" aria-hidden="true">
+</div>
+
+<div id="taskbar">
+  <button class="chip" id="feedBtn">🍪 喂饼干</button>
+  <button class="chip" id="sleepBtn">💤 哄睡</button>
+  <button class="chip" id="callBtn">👋 召唤</button>
+  <span class="divider"></span>
+  <span id="clock">--:--</span>
+</div>
+
+<script>
+(() => {
+  const SPRITES = {
+    idle:  'sprites/pinku_idle.png',
+    happy: 'sprites/pinku_happy.png',
+    walk:  'sprites/pinku_walk.png',
+    jump:  'sprites/pinku_jump.png',
+    eat:   'sprites/pinku_eat.png',
+    sleep: 'sprites/pinku_sleep.png',
+    shy:   'sprites/pinku_shy.png',
+    angry: 'sprites/pinku_angry.png',
+  };
+  const STATE_NAMES = {
+    idle:'待机', happy:'开心', walk:'散步', jump:'跳跳',
+    eat:'吃饼干', sleep:'睡觉 zzZ', shy:'害羞', angry:'生气!',
+  };
+  Object.values(SPRITES).forEach(src => { const i = new Image(); i.src = src; });
+
+  const pet = document.getElementById('pet');
+  const layers = pet.querySelectorAll('.petLayer');
+  let front = 0; // index of currently visible layer
+  const stateName = document.getElementById('stateName');
+
+  // cross-fade to a new sprite + tiny squash pop
+  function showSprite(src) {
+    const back = 1 - front;
+    if (layers[front].src.endsWith(src.split('/').pop())) return;
+    layers[back].src = src;
+    layers[back].classList.add('show');
+    layers[front].classList.remove('show');
+    front = back;
+    pet.classList.remove('pop');
+    void pet.offsetWidth; // restart animation
+    pet.classList.add('pop');
+  }
+
+  const W = () => innerWidth, H = () => innerHeight;
+  let x = W()/2 - 90, y = H() - 260;
+  let state = 'idle';
+  let stateTimer = null;
+  let walkRAF = null;
+  let lastInteract = Date.now();
+  let pokeCount = 0, pokeTimer = null;
+
+  function place() {
+    pet.style.left = x + 'px';
+    pet.style.top = y + 'px';
+  }
+  place();
+
+  function setState(s, holdMs) {
+    state = s;
+    showSprite(SPRITES[s]);
+    stateName.textContent = STATE_NAMES[s];
+    cancelAnimationFrame(walkRAF);
+    clearTimeout(stateTimer);
+    if (holdMs) stateTimer = setTimeout(() => decide(), holdMs);
+  }
+
+  function emote(char) {
+    const e = document.createElement('div');
+    e.className = 'emote';
+    e.textContent = char;
+    e.style.left = (x + 76) + 'px';
+    e.style.top = (y - 10) + 'px';
+    document.body.appendChild(e);
+    setTimeout(() => e.remove(), 1200);
+  }
+
+  /* ---- autonomous state machine ---- */
+  function decide() {
+    if (dragging) return;
+    const idleFor = Date.now() - lastInteract;
+    if (idleFor > 45000) { setState('sleep'); scheduleDecide(20000); return; }
+    const r = Math.random();
+    if (r < .42) { setState('idle'); scheduleDecide(2600 + Math.random()*2600); }
+    else if (r < .78) startWalk();
+    else if (r < .9) { setState('jump', 1100); emote('✨'); }
+    else { setState('happy', 1400); }
+  }
+  function scheduleDecide(ms) {
+    clearTimeout(stateTimer);
+    stateTimer = setTimeout(decide, ms);
+  }
+
+  function startWalk() {
+    setState('walk');
+    const dir = Math.random() < .5 ? -1 : 1;
+    pet.classList.toggle('flip', dir === 1);
+    const target = Math.max(10, Math.min(W() - 190, x + dir * (120 + Math.random()*260)));
+    const speed = 1.6;
+    (function step() {
+      if (state !== 'walk') return;
+      x += Math.sign(target - x) * speed;
+      place();
+      if (Math.abs(target - x) > speed) walkRAF = requestAnimationFrame(step);
+      else { pet.classList.remove('flip'); setState('idle'); scheduleDecide(1800 + Math.random()*2200); }
+    })();
+  }
+
+  /* ---- interactions ---- */
+  function poke() {
+    lastInteract = Date.now();
+    pokeCount++;
+    clearTimeout(pokeTimer);
+    pokeTimer = setTimeout(() => pokeCount = 0, 1600);
+    if (pokeCount >= 4) { setState('angry', 1800); emote('💢'); pokeCount = 0; return; }
+    if (state === 'sleep') { setState('idle', 800); emote('❗'); return; }
+    setState('happy', 1200); emote('💕');
+  }
+
+  pet.addEventListener('dblclick', () => {
+    lastInteract = Date.now();
+    setState('jump', 1100); emote('⭐');
+  });
+
+  /* drag */
+  let dragging = false, dx = 0, dy = 0, moved = false;
+  pet.addEventListener('pointerdown', ev => {
+    dragging = true; moved = false;
+    dx = ev.clientX - x; dy = ev.clientY - y;
+    pet.classList.add('dragging');
+    pet.setPointerCapture(ev.pointerId);
+  });
+  pet.addEventListener('pointermove', ev => {
+    if (!dragging) return;
+    const nx = ev.clientX - dx, ny = ev.clientY - dy;
+    if (!moved && Math.hypot(nx - x, ny - y) > 6) {
+      moved = true;
+      setState('shy'); emote('😳');
+    }
+    if (moved) {
+      x = Math.max(-20, Math.min(W() - 160, nx));
+      y = Math.max(-10, Math.min(H() - 190, ny));
+      place();
+    }
+  });
+  pet.addEventListener('pointerup', () => {
+    pet.classList.remove('dragging');
+    if (!dragging) return;
+    dragging = false;
+    lastInteract = Date.now();
+    if (moved) { setState('idle'); scheduleDecide(1200); }
+    else poke();
+  });
+
+  /* taskbar */
+  document.getElementById('feedBtn').addEventListener('click', ev => {
+    lastInteract = Date.now();
+    const c = document.createElement('div');
+    c.className = 'cookie-fly'; c.textContent = '🍪';
+    const r = ev.currentTarget.getBoundingClientRect();
+    c.style.left = r.left + 'px'; c.style.top = r.top + 'px';
+    document.body.appendChild(c);
+    requestAnimationFrame(() => {
+      c.style.left = (x + 66) + 'px';
+      c.style.top = (y + 40) + 'px';
+      c.style.opacity = '0';
+    });
+    setTimeout(() => c.remove(), 600);
+    setTimeout(() => { setState('eat', 2600); emote('😋'); }, 480);
+  });
+  document.getElementById('sleepBtn').addEventListener('click', () => {
+    lastInteract = Date.now();
+    setState('sleep'); emote('💤');
+    scheduleDecide(12000);
+  });
+  document.getElementById('callBtn').addEventListener('click', () => {
+    lastInteract = Date.now();
+    setState('walk');
+    const target = W()/2 - 90;
+    pet.classList.toggle('flip', target > x);
+    const speed = 3.2;
+    (function step() {
+      if (state !== 'walk') return;
+      x += Math.sign(target - x) * speed;
+      place();
+      if (Math.abs(target - x) > speed) walkRAF = requestAnimationFrame(step);
+      else { pet.classList.remove('flip'); setState('happy', 1300); emote('💖'); }
+    })();
+  });
+
+  /* clock */
+  const clock = document.getElementById('clock');
+  (function tick() {
+    const d = new Date();
+    clock.textContent = String(d.getHours()).padStart(2,'0') + ':' + String(d.getMinutes()).padStart(2,'0');
+    setTimeout(tick, 15000);
+  })();
+
+  addEventListener('resize', () => {
+    x = Math.min(x, W() - 190); y = Math.min(y, H() - 190); place();
+  });
+
+  scheduleDecide(2000);
+})();
+</script>
+</body>
+</html>
