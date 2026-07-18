@@ -122,6 +122,21 @@
     100% { transform: scale(1,1); }
   }
   #pet.pop { animation: pop .34s ease; }
+  /* real leap for the jump state */
+  @keyframes leap {
+    0%   { transform: translateY(0) scale(1,1); }
+    12%  { transform: translateY(4px) scale(1.06,.92); }   /* crouch */
+    45%  { transform: translateY(-74px) scale(.98,1.05); } /* airborne */
+    80%  { transform: translateY(0) scale(1.05,.93); }     /* land squash */
+    100% { transform: translateY(0) scale(1,1); }
+  }
+  #pet.leap { animation: leap .95s cubic-bezier(.45,.02,.55,1); }
+  /* idle micro-wiggle so it never looks like a figurine */
+  @keyframes micro {
+    0%,100% { transform: scale(1,1); }
+    50%     { transform: scale(1.035,.955) rotate(1deg); }
+  }
+  #pet.micro { animation: micro .26s ease; }
   @media (prefers-reduced-motion: reduce) {
     #pet.alive .petLayer, #pet.alive.flip .petLayer, #pet.pop { animation: none; }
     .petLayer { transition: none; }
@@ -208,17 +223,19 @@
   let front = 0; // index of currently visible layer
   const stateName = document.getElementById('stateName');
 
-  // cross-fade to a new sprite + tiny squash pop
-  function showSprite(src) {
+  // cross-fade to a new sprite; optional squash pop for emotional switches
+  function showSprite(src, pop) {
     const back = 1 - front;
     if (layers[front].src.endsWith(src.split('/').pop())) return;
     layers[back].src = src;
     layers[back].classList.add('show');
     layers[front].classList.remove('show');
     front = back;
-    pet.classList.remove('pop');
-    void pet.offsetWidth; // restart animation
-    pet.classList.add('pop');
+    if (pop) {
+      pet.classList.remove('pop');
+      void pet.offsetWidth; // restart animation
+      pet.classList.add('pop');
+    }
   }
 
   const W = () => innerWidth, H = () => innerHeight;
@@ -235,9 +252,18 @@
   }
   place();
 
+  // pop only on emotional switches — routine idle/walk changes stay calm
+  const POP_STATES = new Set(['happy', 'angry', 'shy', 'eat']);
   function setState(s, holdMs) {
     state = s;
-    showSprite(SPRITES[s]);
+    showSprite(SPRITES[s], POP_STATES.has(s));
+    if (s === 'jump') {
+      pet.classList.remove('leap');
+      void pet.offsetWidth;
+      pet.classList.add('leap');
+    } else {
+      pet.classList.remove('leap');
+    }
     stateName.textContent = STATE_NAMES[s];
     cancelAnimationFrame(walkRAF);
     clearTimeout(stateTimer);
@@ -270,19 +296,28 @@
     stateTimer = setTimeout(decide, ms);
   }
 
-  function startWalk() {
+  // 团子走路 = 蹦蹦跳跳:小跳 + 左右摇摆,而不是滑行
+  function hopTo(target, speed, onArrive) {
     setState('walk');
-    const dir = Math.random() < .5 ? -1 : 1;
-    pet.classList.toggle('flip', dir === 1);
-    const target = Math.max(10, Math.min(W() - 190, x + dir * (120 + Math.random()*260)));
-    const speed = 1.6;
-    (function step() {
-      if (state !== 'walk') return;
-      x += Math.sign(target - x) * speed;
+    pet.classList.toggle('flip', target > x);
+    const t0 = performance.now();
+    (function step(now) {
+      if (state !== 'walk') { pet.style.transform = ''; return; }
+      const t = (now || performance.now()) - t0;
+      const hop = Math.abs(Math.sin(t / 380 * Math.PI));       // ~380ms per hop
+      const tilt = Math.sin(t / 380 * Math.PI * 2) * 3.2;      // waddle
+      x += Math.sign(target - x) * speed * (0.55 + hop * 0.9); // faster mid-hop
+      pet.style.transform = `translateY(${-hop * 15}px) rotate(${tilt}deg)`;
       place();
-      if (Math.abs(target - x) > speed) walkRAF = requestAnimationFrame(step);
-      else { pet.classList.remove('flip'); setState('idle'); scheduleDecide(1800 + Math.random()*2200); }
-    })();
+      if (Math.abs(target - x) > speed * 1.5) walkRAF = requestAnimationFrame(step);
+      else { pet.style.transform = ''; pet.classList.remove('flip'); onArrive(); }
+    })(t0);
+  }
+
+  function startWalk() {
+    const dir = Math.random() < .5 ? -1 : 1;
+    const target = Math.max(10, Math.min(W() - 190, x + dir * (120 + Math.random()*260)));
+    hopTo(target, 1.7, () => { setState('idle'); scheduleDecide(1800 + Math.random()*2200); });
   }
 
   /* ---- interactions ---- */
@@ -354,17 +389,7 @@
   });
   document.getElementById('callBtn').addEventListener('click', () => {
     lastInteract = Date.now();
-    setState('walk');
-    const target = W()/2 - 90;
-    pet.classList.toggle('flip', target > x);
-    const speed = 3.2;
-    (function step() {
-      if (state !== 'walk') return;
-      x += Math.sign(target - x) * speed;
-      place();
-      if (Math.abs(target - x) > speed) walkRAF = requestAnimationFrame(step);
-      else { pet.classList.remove('flip'); setState('happy', 1300); emote('💖'); }
-    })();
+    hopTo(W()/2 - 90, 3.4, () => { setState('happy', 1300); emote('💖'); });
   });
 
   /* clock */
@@ -378,6 +403,16 @@
   addEventListener('resize', () => {
     x = Math.min(x, W() - 190); y = Math.min(y, H() - 190); place();
   });
+
+  /* random micro-wiggle while idle — a living thing fidgets */
+  (function fidget() {
+    if (state === 'idle' && !dragging) {
+      pet.classList.remove('micro');
+      void pet.offsetWidth;
+      pet.classList.add('micro');
+    }
+    setTimeout(fidget, 2600 + Math.random() * 3200);
+  })();
 
   scheduleDecide(2000);
 })();
