@@ -216,7 +216,10 @@
     idle:'待机', happy:'开心', walk:'散步', jump:'跳跳',
     eat:'吃饼干', sleep:'睡觉 zzZ', shy:'害羞', angry:'生气!',
   };
-  Object.values(SPRITES).forEach(src => { const i = new Image(); i.src = src; });
+  // real 9-frame walk cycle (Seedance first/last-frame loop, cut per frame)
+  const WALK_FRAMES = Array.from({length: 9}, (_, i) =>
+    `sprites/walk/walk_f${String(i + 1).padStart(2, '0')}.png`);
+  [...Object.values(SPRITES), ...WALK_FRAMES].forEach(src => { const i = new Image(); i.src = src; });
 
   const pet = document.getElementById('pet');
   const layers = pet.querySelectorAll('.petLayer');
@@ -296,18 +299,21 @@
     stateTimer = setTimeout(decide, ms);
   }
 
-  // 团子走路 = 蹦蹦跳跳:小跳 + 左右摇摆,而不是滑行
+  // real frame-by-frame walk cycle + gentle bob
   function hopTo(target, speed, onArrive) {
     setState('walk');
+    // walk frames face left; flip when heading right
     pet.classList.toggle('flip', target > x);
     const t0 = performance.now();
+    const FRAME_MS = 62; // 9 frames ≈ 560ms per gait cycle
     (function step(now) {
       if (state !== 'walk') { pet.style.transform = ''; return; }
       const t = (now || performance.now()) - t0;
-      const hop = Math.abs(Math.sin(t / 380 * Math.PI));       // ~380ms per hop
-      const tilt = Math.sin(t / 380 * Math.PI * 2) * 3.2;      // waddle
-      x += Math.sign(target - x) * speed * (0.55 + hop * 0.9); // faster mid-hop
-      pet.style.transform = `translateY(${-hop * 15}px) rotate(${tilt}deg)`;
+      const fi = Math.floor(t / FRAME_MS) % WALK_FRAMES.length;
+      layers[front].src = WALK_FRAMES[fi]; // direct swap, no crossfade mid-cycle
+      const bob = Math.abs(Math.sin(t / (FRAME_MS * 4.5) * Math.PI));
+      pet.style.transform = `translateY(${-bob * 5}px)`;
+      x += Math.sign(target - x) * speed;
       place();
       if (Math.abs(target - x) > speed * 1.5) walkRAF = requestAnimationFrame(step);
       else { pet.style.transform = ''; pet.classList.remove('flip'); onArrive(); }
